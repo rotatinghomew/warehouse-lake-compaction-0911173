@@ -10,6 +10,15 @@ def fingerprint(value):
                                     separators=(",", ":")).encode()).hexdigest()
 
 
+def sha256_file(path, chunk_size=1024 * 1024):
+    """物理文件内容摘要；空间回收依据登记的内容身份，而不是修改时间。"""
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def connect(root, schema):
     directory = Path(root)
     directory.mkdir(parents=True, exist_ok=True)
@@ -22,12 +31,17 @@ def connect(root, schema):
 
 @contextmanager
 def atomic(database):
-    database.execute("BEGIN IMMEDIATE")
+    """开启立即事务；若调用方已持有事务，则复用它（保存点语义由外层负责）。"""
+    in_transaction = database.in_transaction
+    if not in_transaction:
+        database.execute("BEGIN IMMEDIATE")
     try:
         yield database
-        database.commit()
+        if not in_transaction:
+            database.commit()
     except BaseException:
-        database.rollback()
+        if not in_transaction:
+            database.rollback()
         raise
 
 
